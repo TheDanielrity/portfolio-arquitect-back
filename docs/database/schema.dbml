@@ -1,0 +1,622 @@
+Project ArchitecturePortfolio {
+  database_type: 'PostgreSQL'
+  Note: 'Base de datos para portafolio profesional de arquitectura'
+}
+
+
+// ======================================================
+// AUTH
+// ======================================================
+
+Table auth.app_user {
+  id uuid [pk]
+
+  email varchar(320) [not null]
+  password_hash text [not null]
+
+  first_name varchar(100) [not null]
+  last_name varchar(100) [not null]
+
+  is_active boolean [not null, default: true]
+
+  last_login_at timestamptz
+
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+
+  Note: 'Usuarios con acceso al panel administrativo'
+}
+
+
+Table auth.refresh_token {
+  id uuid [pk]
+
+  user_id uuid [not null]
+
+  token_hash varchar(128) [not null, unique]
+
+  expires_at timestamptz [not null]
+  revoked_at timestamptz
+
+  created_at timestamptz [not null]
+
+  indexes {
+    user_id
+    expires_at
+  }
+
+  Note: 'Refresh tokens para sesiones administrativas'
+}
+
+
+// ======================================================
+// PORTFOLIO
+// ======================================================
+
+Table portfolio.project {
+  id uuid [pk]
+
+  title varchar(200) [not null]
+  slug varchar(220) [not null]
+
+  short_description varchar(500)
+  description text
+
+  location varchar(255)
+
+  year smallint
+  area_m2 numeric(12,2)
+
+  client_name varchar(200)
+
+  status varchar(20) [not null, default: 'DRAFT']
+
+  visibility varchar(20) [not null, default: 'PUBLIC']
+
+  is_featured boolean [not null, default: false]
+
+  sort_order integer [not null, default: 0]
+
+  seo_title varchar(200)
+  seo_description varchar(320)
+
+  published_at timestamptz
+
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+
+  deleted_at timestamptz
+
+  indexes {
+    status
+    visibility
+    published_at
+    is_featured
+    (status, visibility, sort_order)
+  }
+
+  Note: '''
+  Proyecto principal del portafolio.
+  At most one non-deleted project can have is_featured=true (partial unique index
+  uq_project_single_featured; see schema.sql). Selecting another replaces it atomically.
+
+  status:
+  - DRAFT
+  - PUBLISHED
+  - ARCHIVED
+
+  visibility:
+  - PUBLIC
+  - PRIVATE
+  - UNLISTED
+  '''
+}
+
+
+Table portfolio.category {
+  id uuid [pk]
+
+  name varchar(100) [not null]
+
+  slug varchar(120) [not null, unique]
+
+  description text
+
+  sort_order integer [not null, default: 0]
+
+  is_active boolean [not null, default: true]
+
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+
+  Note: 'Categorías principales de los proyectos'
+}
+
+
+Table portfolio.project_category {
+  project_id uuid [not null]
+  category_id uuid [not null]
+
+  created_at timestamptz [not null]
+
+  indexes {
+    (project_id, category_id) [pk]
+    category_id
+  }
+
+  Note: 'Relación muchos a muchos entre proyecto y categoría'
+}
+
+
+Table portfolio.tag {
+  id uuid [pk]
+
+  name varchar(80) [not null, unique]
+
+  slug varchar(100) [not null, unique]
+
+  created_at timestamptz [not null]
+
+  Note: 'Etiquetas descriptivas utilizadas en proyectos'
+}
+
+
+Table portfolio.project_tag {
+  project_id uuid [not null]
+  tag_id uuid [not null]
+
+  created_at timestamptz [not null]
+
+  indexes {
+    (project_id, tag_id) [pk]
+    tag_id
+  }
+
+  Note: 'Relación muchos a muchos entre proyecto y tag'
+}
+
+
+Table portfolio.project_attribute {
+  id uuid [pk]
+
+  project_id uuid [not null]
+
+  label varchar(100) [not null]
+
+  value varchar(500) [not null]
+
+  sort_order integer [not null, default: 0]
+
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+
+  indexes {
+    (project_id, sort_order)
+  }
+
+  Note: '''
+  Datos descriptivos adicionales.
+
+  Ejemplos:
+  - Arquitecto
+  - Fotografía
+  - Constructor
+  - Colaboradores
+  - Estado del proyecto
+  '''
+}
+
+
+// ======================================================
+// MEDIA
+// ======================================================
+
+Table media.media_asset {
+  id uuid [pk]
+
+  type varchar(30) [not null]
+
+  original_filename varchar(255) [not null]
+
+  storage_provider varchar(50) [not null]
+
+  storage_key varchar(500) [not null]
+
+  url text [not null]
+
+  thumbnail_url text
+
+  mime_type varchar(150) [not null]
+
+  file_size bigint [not null]
+
+  width integer
+  height integer
+
+  alt_text varchar(255)
+
+  title varchar(255)
+
+  description text
+
+  metadata jsonb
+
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+
+  indexes {
+    (storage_provider, storage_key) [unique]
+  }
+
+  Note: '''
+  Repositorio central de archivos multimedia.
+
+  type:
+  - IMAGE
+  - VIDEO
+  - PDF
+  - MODEL_3D
+  - DOCUMENT
+  '''
+}
+
+
+// ======================================================
+// PROJECT MEDIA
+// ======================================================
+
+Table portfolio.project_media {
+  id uuid [pk]
+
+  project_id uuid [not null]
+
+  media_id uuid [not null]
+
+  role varchar(30) [not null]
+
+  sort_order integer [not null, default: 0]
+
+  created_at timestamptz [not null]
+
+  indexes {
+    project_id
+    media_id
+
+    (project_id, media_id, role) [unique]
+
+    (project_id, sort_order)
+  }
+
+  Note: '''
+  Archivos multimedia relacionados con proyectos.
+
+  role:
+  - COVER
+  - GALLERY
+  - PLAN
+  - RENDER
+  - DOCUMENT
+  - MODEL
+  '''
+}
+
+
+// ======================================================
+// PROJECT SECTIONS
+// ======================================================
+
+Table portfolio.project_section {
+  id uuid [pk]
+
+  project_id uuid [not null]
+
+  title varchar(200)
+
+  content text
+
+  section_type varchar(30) [not null]
+
+  sort_order integer [not null, default: 0]
+
+  is_visible boolean [not null, default: true]
+
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+
+  indexes {
+    project_id
+    (project_id, sort_order)
+  }
+
+  Note: '''
+  Permite construir narrativas personalizadas para cada proyecto.
+
+  section_type:
+  - TEXT
+  - IMAGE
+  - GALLERY
+  - VIDEO
+  - MODEL_3D
+  - QUOTE
+  - SPLIT
+  '''
+}
+
+
+Table portfolio.project_section_media {
+  section_id uuid [not null]
+
+  media_id uuid [not null]
+
+  sort_order integer [not null, default: 0]
+
+  caption varchar(255)
+
+  created_at timestamptz [not null]
+
+  indexes {
+    (section_id, media_id) [pk]
+
+    media_id
+
+    (section_id, sort_order)
+  }
+
+  Note: 'Multimedia utilizada dentro de las secciones de un proyecto'
+}
+
+
+// ======================================================
+// CONTENT
+// ======================================================
+
+Table content.profile {
+  id uuid [pk]
+
+  first_name varchar(100) [not null]
+
+  last_name varchar(100) [not null]
+
+  professional_title varchar(150)
+
+  short_bio text
+
+  biography text
+
+  email varchar(320)
+
+  phone varchar(50)
+
+  location varchar(200)
+
+  profile_media_id uuid
+
+  cv_media_id uuid
+
+  is_active boolean [not null, default: true]
+
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+
+  Note: 'Perfil profesional mostrado en el portafolio'
+}
+
+
+Table content.social_link {
+  id uuid [pk]
+
+  profile_id uuid [not null]
+
+  platform varchar(50) [not null]
+
+  url text [not null]
+
+  username varchar(100)
+
+  sort_order integer [not null, default: 0]
+
+  is_visible boolean [not null, default: true]
+
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+
+  indexes {
+    profile_id
+    (profile_id, sort_order)
+  }
+
+  Note: 'Redes sociales vinculadas al perfil'
+}
+
+
+Table content.service {
+  id uuid [pk]
+
+  name varchar(150) [not null]
+
+  slug varchar(170) [not null, unique]
+
+  short_description varchar(300)
+
+  description text
+
+  icon varchar(100)
+
+  sort_order integer [not null, default: 0]
+
+  is_visible boolean [not null, default: true]
+
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+
+  Note: 'Servicios profesionales mostrados públicamente'
+}
+
+
+Table content.site_setting {
+  id uuid [pk]
+
+  key varchar(100) [not null, unique]
+
+  value jsonb [not null]
+
+  updated_at timestamptz [not null]
+
+  Note: 'Configuraciones globales y dinámicas del sitio'
+}
+
+
+// ======================================================
+// CONTACT
+// ======================================================
+
+Table contact.contact_message {
+  id uuid [pk]
+
+  name varchar(150) [not null]
+
+  email varchar(320) [not null]
+
+  phone varchar(50)
+
+  subject varchar(200)
+
+  message text [not null]
+
+  status varchar(30) [not null, default: 'NEW']
+
+  ip_address inet
+
+  user_agent text
+
+  created_at timestamptz [not null]
+
+  read_at timestamptz
+
+  replied_at timestamptz
+
+  indexes {
+    status
+    created_at
+    (status, created_at)
+  }
+
+  Note: '''
+  Mensajes enviados mediante el formulario de contacto.
+
+  status:
+  - NEW
+  - READ
+  - REPLIED
+  - ARCHIVED
+  - SPAM
+  '''
+}
+
+
+// ======================================================
+// RELATIONSHIPS
+// ======================================================
+
+
+// AUTH
+
+Ref: auth.refresh_token.user_id > auth.app_user.id [
+  delete: cascade
+]
+
+
+// PROJECT - CATEGORY
+
+Ref: portfolio.project_category.project_id > portfolio.project.id [
+  delete: cascade
+]
+
+Ref: portfolio.project_category.category_id > portfolio.category.id [
+  delete: cascade
+]
+
+
+// PROJECT - TAG
+
+Ref: portfolio.project_tag.project_id > portfolio.project.id [
+  delete: cascade
+]
+
+Ref: portfolio.project_tag.tag_id > portfolio.tag.id [
+  delete: cascade
+]
+
+
+// PROJECT ATTRIBUTES
+
+Ref: portfolio.project_attribute.project_id > portfolio.project.id [
+  delete: cascade
+]
+
+
+// PROJECT MEDIA
+
+Ref: portfolio.project_media.project_id > portfolio.project.id [
+  delete: cascade
+]
+
+Ref: portfolio.project_media.media_id > media.media_asset.id [
+  delete: restrict
+]
+
+
+// PROJECT SECTIONS
+
+Ref: portfolio.project_section.project_id > portfolio.project.id [
+  delete: cascade
+]
+
+
+// SECTION MEDIA
+
+Ref: portfolio.project_section_media.section_id > portfolio.project_section.id [
+  delete: cascade
+]
+
+Ref: portfolio.project_section_media.media_id > media.media_asset.id [
+  delete: restrict
+]
+
+
+// PROFILE
+
+Ref: content.profile.profile_media_id > media.media_asset.id [
+  delete: set null
+]
+
+Ref: content.profile.cv_media_id > media.media_asset.id [
+  delete: set null
+]
+
+
+// SOCIAL LINKS
+
+Ref: content.social_link.profile_id > content.profile.id [
+  delete: cascade
+]
+// Technical operation history; original 17 domain tables are unchanged.
+Table media.storage_operation {
+  id uuid [pk]
+  kind varchar(10) [not null]
+  status varchar(20) [not null]
+  created_by uuid [not null, note: 'Administrator identity snapshot, intentionally no FK']
+  storage_provider varchar(50) [not null]
+  storage_key varchar(500) [not null]
+  temporary_key varchar(500)
+  expected_metadata jsonb [not null]
+  media_id uuid [note: 'Retained asset identity, intentionally no FK']
+  expires_at timestamptz [not null]
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+  indexes {
+    (status, expires_at)
+    (media_id, kind)
+  }
+  Note: 'UPLOAD/DELETE history. Partial unique index on provider/key for PENDING, PROCESSING, CLEANUP_PENDING only; see SQL. No global uniqueness: terminal history can coexist.'
+}
